@@ -16,3 +16,4 @@ idea-plugin/build
 logs
 arthas
 data/
+backend/agent/lib/

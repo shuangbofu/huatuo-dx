@@ -7,7 +7,7 @@ interface Props {
 
 export function StopMonitorButton({ onClick, disabled }: Props) {
   return (
-    <Tooltip title="停止监控">
+    <Tooltip title="停止">
       <Button
         type="primary"
         danger
@@ -15,7 +15,9 @@ export function StopMonitorButton({ onClick, disabled }: Props) {
         className="dx-stop-btn"
         onClick={onClick}
         disabled={disabled}
-      />
+      >
+        停止
+      </Button>
     </Tooltip>
   );
 }

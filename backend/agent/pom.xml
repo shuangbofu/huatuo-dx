@@ -39,8 +39,6 @@
             <groupId>org.duckdb</groupId>
             <artifactId>duckdb_jdbc</artifactId>
             <version>1.4.4.0</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/lib/duckdb_jdbc-1.4.4.0.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -54,9 +52,6 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <includeSystemScope>true</includeSystemScope>
-                </configuration>
                 <executions>
                     <execution>
                         <goals>
