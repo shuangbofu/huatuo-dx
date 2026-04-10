@@ -15,6 +15,7 @@ interface Props {
 
 export function DiagnosticResultPanel({ record }: Props) {
   const hasEvents = record.triggerEvents.length > 0;
+  const [showRawOutput, setShowRawOutput] = useState(false);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
@@ -80,35 +81,40 @@ export function DiagnosticResultPanel({ record }: Props) {
       ) : (
         <div className="space-y-3">
           <div className="border border-slate-200 bg-white px-3 py-3">
-            <div className="text-sm font-medium text-slate-900">
-              {record.status === 'RUNNING'
-                ? '监控已经启动，当前还没有捕获到触发结果'
-                : record.errorMessage
-                  ? '本次监控执行异常'
-                  : '本次监控没有整理出可展示的触发结果'}
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="text-sm font-medium text-slate-900">
+                {showRawOutput
+                  ? '原始输出'
+                  : record.status === 'RUNNING'
+                    ? '监控已经启动，当前还没有捕获到触发结果'
+                    : record.errorMessage
+                      ? '本次监控执行异常'
+                      : '本次监控没有整理出可展示的触发结果'}
+              </div>
+              {(record.output || record.errorMessage) ? (
+                <Button size="small" onClick={() => setShowRawOutput((value) => !value)}>
+                  {showRawOutput ? '查看状态说明' : '查看原始输出'}
+                </Button>
+              ) : null}
             </div>
-            <div className="mt-2 text-sm leading-6 text-slate-600">
-              {record.status === 'RUNNING'
-                ? '你现在应该去触发实际业务请求。结果一旦进来，这里会自动刷新。'
-                : record.errorMessage
-                  ? record.errorMessage
-                  : '如果你怀疑已经触发过，但这里还是空的，那问题在后端监控链或结果解析链，不在这个页面。'}
-            </div>
+            {showRawOutput ? (
+              <div className="whitespace-pre-wrap break-words bg-slate-50 px-3 py-3 text-sm leading-6 text-slate-800">
+                {record.output || record.errorMessage}
+              </div>
+            ) : (
+              <div className="text-sm leading-6 text-slate-600">
+                {record.status === 'RUNNING'
+                  ? '你现在应该去触发实际业务请求。结果一旦进来，这里会自动刷新。'
+                  : record.errorMessage
+                    ? record.errorMessage
+                    : '如果你怀疑已经触发过，但这里还是空的，那问题在后端监控链或结果解析链，不在这个页面。'}
+              </div>
+            )}
           </div>
           <div className="border border-slate-200 bg-white px-3 py-3">
             <div className="text-xs text-slate-500">监控命令</div>
             <div className="mt-2 break-all font-mono text-sm text-slate-800">{record.command}</div>
           </div>
-          {(record.output || record.errorMessage) ? (
-            <details className="border border-slate-200 bg-white px-3 py-3">
-              <summary className="cursor-pointer text-sm font-medium text-slate-700">
-                查看原始输出
-              </summary>
-              <div className="mt-3 bg-slate-50 px-3 py-3 text-sm leading-6 text-slate-800 whitespace-pre-wrap break-words">
-                {record.output || record.errorMessage}
-              </div>
-            </details>
-          ) : null}
         </div>
       )}
     </div>
