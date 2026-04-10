@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Java-17-35511d?style=flat-square" alt="Java 17" />
   <img src="https://img.shields.io/badge/Spring%20Boot-3.x-6f8f2a?style=flat-square" alt="Spring Boot 3" />
   <img src="https://img.shields.io/badge/React-18-95b83d?style=flat-square" alt="React 18" />
-  <img src="https://img.shields.io/badge/Vite-5-f0c060?style=flat-square" alt="Vite 5" />
+  <img src="https://img.shields.io/badge/Vite-4-f0c060?style=flat-square" alt="Vite 4" />
   <img src="https://img.shields.io/badge/License-MIT-15335b?style=flat-square" alt="MIT License" />
 </p>
 
@@ -244,7 +244,7 @@ flowchart LR
 
 - React 18
 - TypeScript
-- Vite 5
+- Vite 4
 - Tailwind CSS
 - Ant Design
 
@@ -290,9 +290,9 @@ npm run dev
 
 ### 前端
 
-- Node.js 18+
+- Node.js 16.x
 
-> 当前主线前端基于 Vite 5，默认需要 Node 18 及以上。
+> 当前 `codex/node16-compat` 分支前端已切到 Vite 4，可直接在 Node 16 环境下安装与构建。
 
 ## 当前已实现状态
 
@@ -322,6 +322,7 @@ mvn -Dmaven.repo.local=$(pwd)/.m2 -f backend/pom.xml test
 
 ```bash
 cd frontend
+npm install
 npm run build
 ```
 
