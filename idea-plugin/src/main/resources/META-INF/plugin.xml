@@ -1,0 +1,34 @@
+<idea-plugin>
+    <id>top.fusb.huatuo.dx.idea</id>
+    <name>Huatuo Diagnose</name>
+    <vendor email="opensource@fusb.top">fusb</vendor>
+    <description><![CDATA[
+    Huatuo Diagnose IDEA 插件，可在方法上快速创建监看、链路和堆栈诊断规则。
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.java</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <notificationGroup id="Huatuo Diagnose" displayType="BALLOON" isLogByDefault="true"/>
+        <applicationConfigurable
+                id="top.fusb.huatuo.dx.idea.settings"
+                displayName="Huatuo Diagnose"
+                groupId="other"
+                instance="top.fusb.huatuo.dx.idea.settings.HuatuoPluginConfigurable"/>
+    </extensions>
+
+    <actions>
+        <action id="HuatuoDiagnose.OpenSettingsAction"
+                class="top.fusb.huatuo.dx.idea.actions.OpenSettingsAction"
+                text="华佗诊断设置">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+        <group id="HuatuoDiagnose.ActionGroup"
+               class="top.fusb.huatuo.dx.idea.actions.HuatuoDiagnoseActionGroup"
+               text="华佗诊断"
+               popup="true">
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+        </group>
+    </actions>
+</idea-plugin>

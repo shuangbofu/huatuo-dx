@@ -1,0 +1,38 @@
+server:
+  port: 8090
+
+spring:
+  application:
+    name: huatuo-dx-agent
+  datasource:
+    url: jdbc:h2:file:./data/huatuo-dx-agent-v2;MODE=MYSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  jackson:
+    default-property-inclusion: non_null
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+huatuo:
+  dx:
+    agent:
+      manager-url: http://localhost:8081
+      node-code: local-dev
+      node-name: Local Dev Node
+      host: 127.0.0.1
+      public-base-url: http://127.0.0.1:8090
+      secret: change-me
+      process-pattern: java
+      log-directories: []
+      log-duckdb-path: ./data/huatuo-dx-agent-logs.duckdb
+      arthas-install-dir: ./arthas
+      arthas-version: 3.7.3
+      heartbeat-interval-seconds: 15

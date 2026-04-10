@@ -1,0 +1,50 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: huatuo-dx-manager
+  datasource:
+    url: jdbc:h2:file:./data/huatuo-dx-manager-v2;MODE=MYSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  jackson:
+    default-property-inclusion: non_null
+
+huatuo:
+  dx:
+    manager:
+      heartbeat-timeout-seconds: 90
+      sync-interval-seconds: 30
+      auth:
+        default-admin-password: 12345
+        default-user-password: 12345
+      plugin:
+        enabled: true
+        access-key: huatuo-idea
+        access-secret: change-me
+        allowed-clock-skew-seconds: 300
+      local-agent:
+        auto-start-enabled: true
+        node-code: local-companion
+        node-name: Local Companion Agent
+        host: 127.0.0.1
+        secret: change-me
+        process-pattern: java
+        heartbeat-interval-seconds: 15
+        log-duckdb-path: ./data/huatuo-dx-agent-logs.duckdb
+        arthas-install-dir: ./arthas
+        arthas-version: 3.7.3
+        arthas-download-base-url: https://arthas.aliyun.com/arthas-boot.jar
+        startup-wait-millis: 1500
