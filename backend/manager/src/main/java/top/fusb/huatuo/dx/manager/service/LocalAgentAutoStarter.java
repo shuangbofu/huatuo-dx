@@ -164,7 +164,10 @@ public class LocalAgentAutoStarter {
         if (localAgent.getCommand() != null && !localAgent.getCommand().isEmpty()) {
             return localAgent.getCommand();
         }
-        Path agentJar = detectAgentJar();
+        Path agentJar = resolveConfiguredAgentJar(localAgent);
+        if (agentJar == null) {
+            agentJar = detectAgentJar();
+        }
         if (agentJar == null) {
             agentJar = buildAgentJarIfNeeded();
         }
@@ -301,8 +304,25 @@ public class LocalAgentAutoStarter {
         return Paths.get(System.getProperty("java.home"), "bin", executable).toString();
     }
 
+    private Path resolveConfiguredAgentJar(ManagerProperties.LocalAgent localAgent) {
+        String agentJarPath = localAgent.getAgentJarPath();
+        if (agentJarPath == null || agentJarPath.isBlank()) {
+            return null;
+        }
+        Path configuredPath = Paths.get(agentJarPath);
+        if (!Files.isRegularFile(configuredPath)) {
+            log.warn("Configured local agent jar path does not exist or is not a file: {}", configuredPath);
+            return null;
+        }
+        return configuredPath.toAbsolutePath().normalize();
+    }
+
     private Path detectAgentJar() {
         try {
+            Path deployedAgentJar = detectDeployedAgentJar();
+            if (deployedAgentJar != null) {
+                return deployedAgentJar;
+            }
             Path backendDir = resolveBackendDir();
             if (backendDir == null) {
                 return null;
@@ -326,6 +346,59 @@ public class LocalAgentAutoStarter {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private Path detectDeployedAgentJar() {
+        try {
+            Path location = resolveApplicationLocation();
+            if (location == null) {
+                return null;
+            }
+            Path baseDir = Files.isRegularFile(location) ? location.getParent() : location;
+            if (baseDir == null) {
+                return null;
+            }
+            List<Path> candidateDirs = List.of(
+                    baseDir,
+                    baseDir.resolve("agent"),
+                    baseDir.resolve("lib"),
+                    baseDir.resolveSibling("agent"),
+                    baseDir.resolveSibling("lib")
+            );
+            for (Path candidateDir : candidateDirs) {
+                Path agentJar = findAgentJarInDirectory(candidateDir);
+                if (agentJar != null) {
+                    return agentJar;
+                }
+            }
+            return null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private Path findAgentJarInDirectory(Path directory) {
+        if (directory == null || !Files.isDirectory(directory)) {
+            return null;
+        }
+        try (Stream<Path> stream = Files.list(directory)) {
+            return stream
+                    .filter(this::isAgentJar)
+                    .sorted(Comparator.comparing((Path path) -> path.getFileName().toString()).reversed())
+                    .findFirst()
+                    .map(path -> path.toAbsolutePath().normalize())
+                    .orElse(null);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private boolean isAgentJar(Path path) {
+        String name = path.getFileName().toString();
+        return Files.isRegularFile(path)
+                && name.startsWith("huatuo-dx-agent-")
+                && name.endsWith(".jar")
+                && !name.endsWith(".jar.original");
     }
 
     private Path buildAgentJarIfNeeded() {
@@ -353,11 +426,22 @@ public class LocalAgentAutoStarter {
 
     private Path resolveBackendDir() {
         try {
-            Path location = Paths.get(HuatuoDxManagerApplication.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            Path location = resolveApplicationLocation();
+            if (location == null) {
+                return null;
+            }
             Path managerDir = location.getParent() != null && location.getParent().getParent() != null
                     ? location.getParent().getParent()
                     : null;
             return managerDir == null ? null : managerDir.getParent();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private Path resolveApplicationLocation() {
+        try {
+            return Paths.get(HuatuoDxManagerApplication.class.getProtectionDomain().getCodeSource().getLocation().toURI());
         } catch (Exception ignored) {
             return null;
         }

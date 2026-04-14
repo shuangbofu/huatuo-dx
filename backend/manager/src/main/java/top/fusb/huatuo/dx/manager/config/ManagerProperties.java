@@ -89,6 +89,7 @@ public class ManagerProperties {
         private String arthasInstallDir = "./arthas";
         private String arthasVersion = "3.7.3";
         private String arthasDownloadBaseUrl = "https://arthas.aliyun.com/arthas-boot.jar";
+        private String agentJarPath;
         private List<String> command = List.of();
         private String workingDirectory;
         private String logFile;
@@ -191,6 +192,14 @@ public class ManagerProperties {
 
         public void setArthasDownloadBaseUrl(String arthasDownloadBaseUrl) {
             this.arthasDownloadBaseUrl = arthasDownloadBaseUrl;
+        }
+
+        public String getAgentJarPath() {
+            return agentJarPath;
+        }
+
+        public void setAgentJarPath(String agentJarPath) {
+            this.agentJarPath = agentJarPath;
         }
 
         public List<String> getCommand() {
