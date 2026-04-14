@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 public class DuckDbLogIndexService {
 
     private final String jdbcUrl;
+    private volatile boolean initialized;
 
     public DuckDbLogIndexService(HuatuoAgentProperties properties) {
         Path dbPath = Path.of(properties.getLogDuckdbPath()).toAbsolutePath().normalize();
@@ -34,7 +35,6 @@ public class DuckDbLogIndexService {
             throw new IllegalStateException("Failed to prepare DuckDB path: " + dbPath, exception);
         }
         this.jdbcUrl = "jdbc:duckdb:" + dbPath;
-        initialize();
     }
 
     public synchronized FileState findFileState(String filePath) {
@@ -283,8 +283,11 @@ public class DuckDbLogIndexService {
         }
     }
 
-    private void initialize() {
-        try (Connection connection = openConnection();
+    private synchronized void ensureInitialized() {
+        if (initialized) {
+            return;
+        }
+        try (Connection connection = DriverManager.getConnection(jdbcUrl);
              Statement statement = connection.createStatement()) {
             statement.execute("""
                     create table if not exists log_entries (
@@ -310,6 +313,7 @@ public class DuckDbLogIndexService {
             statement.execute("create index if not exists idx_log_entries_file_line on log_entries(file_path, line_number)");
             statement.execute("create index if not exists idx_log_entries_collected on log_entries(collected_at_epoch_ms)");
             statement.execute("create index if not exists idx_log_file_states_directory on log_file_states(directory)");
+            initialized = true;
         } catch (SQLException exception) {
             throw new IllegalStateException("Failed to initialize DuckDB log index", exception);
         }
@@ -427,6 +431,7 @@ public class DuckDbLogIndexService {
     }
 
     private Connection openConnection() throws SQLException {
+        ensureInitialized();
         return DriverManager.getConnection(jdbcUrl);
     }
 
