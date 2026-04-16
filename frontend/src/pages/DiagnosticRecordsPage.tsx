@@ -19,7 +19,7 @@ interface Props {
 
 export function DiagnosticRecordsPage({ portal, nodes }: Props) {
   const navigate = useNavigate();
-  const [selectedNodeId, setSelectedNodeId] = useState<number | undefined>(nodes[0]?.id);
+  const [selectedNodeId, setSelectedNodeId] = useState<number | undefined>();
   const [records, setRecords] = useState<DiagnosticExecutionRecord[]>([]);
   const [keyword, setKeyword] = useState('');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'WATCH' | 'TRACE' | 'STACK'>('ALL');
@@ -30,20 +30,11 @@ export function DiagnosticRecordsPage({ portal, nodes }: Props) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (nodes.length && !selectedNodeId) {
-      setSelectedNodeId(nodes[0].id);
-    }
-  }, [nodes, selectedNodeId]);
-
-  useEffect(() => {
-    if (!selectedNodeId) {
-      return;
-    }
     void reload(selectedNodeId);
   }, [selectedNodeId, keyword, typeFilter, statusFilter, page, pageSize]);
 
   useEffect(() => {
-    if (!records.some((item) => item.status === 'RUNNING') || !selectedNodeId) {
+    if (!records.some((item) => item.status === 'RUNNING')) {
       return undefined;
     }
     const timer = window.setInterval(() => {
@@ -52,11 +43,11 @@ export function DiagnosticRecordsPage({ portal, nodes }: Props) {
     return () => window.clearInterval(timer);
   }, [records, selectedNodeId]);
 
-  async function reload(nodeId: number) {
+  async function reload(nodeId?: number) {
     setLoading(true);
     try {
       const result = await api.listDiagnosticRecordsPage({
-        nodeId,
+        nodeId: nodeId ?? undefined,
         keyword: keyword.trim() || undefined,
         type: typeFilter,
         status: statusFilter,
@@ -91,6 +82,8 @@ export function DiagnosticRecordsPage({ portal, nodes }: Props) {
             <Select
               className="w-56"
               value={selectedNodeId}
+              allowClear
+              placeholder="全部节点"
               options={nodes.map((node) => ({ label: node.nodeName, value: node.id }))}
               onChange={(value) => {
                 setSelectedNodeId(value);
@@ -139,7 +132,7 @@ export function DiagnosticRecordsPage({ portal, nodes }: Props) {
             >
               重置
             </Button>
-            <Button icon={<ReloadOutlined />} onClick={() => selectedNodeId && void reload(selectedNodeId)}>
+            <Button icon={<ReloadOutlined />} onClick={() => void reload(selectedNodeId)}>
               刷新
             </Button>
           </Space>
