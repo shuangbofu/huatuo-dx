@@ -65,7 +65,7 @@ public record PluginRuleRequest(
                     null,
                     null,
                     2,
-                    1,
+                    5,
                     30000L,
                     enabled,
                     "由 IDEA 插件创建"
