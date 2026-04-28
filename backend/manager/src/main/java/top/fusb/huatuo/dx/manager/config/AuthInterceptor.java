@@ -68,6 +68,9 @@ public class AuthInterceptor implements HandlerInterceptor {
         if (uri.startsWith("/api/auth/plugin/login")) {
             return true;
         }
+        if (uri.startsWith("/api/plugin/log-console/")) {
+            return true;
+        }
         if ("POST".equalsIgnoreCase(method) && "/api/agents/register".equals(uri)) {
             return true;
         }
