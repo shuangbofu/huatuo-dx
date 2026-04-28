@@ -13,6 +13,30 @@ const TAIL_MODE_AUTO_STOP_MS = 5 * 60 * 1000;
 
 type LogLevelTone = 'error' | 'warn' | 'info' | 'debug' | 'default';
 
+function sourceSelectionKey(nodeId: number | undefined, sourceId: string | undefined) {
+  return nodeId == null || !sourceId ? undefined : `${nodeId}::${sourceId}`;
+}
+
+function compareLogItems(left: LogQueryItem, right: LogQueryItem) {
+  if (left.collectedAtEpochMs !== right.collectedAtEpochMs) {
+    return left.collectedAtEpochMs - right.collectedAtEpochMs;
+  }
+  const fileCompare = left.filePath.localeCompare(right.filePath);
+  if (fileCompare !== 0) {
+    return fileCompare;
+  }
+  return left.lineNumber - right.lineNumber;
+}
+
+function findLatestLogItem(items: LogQueryItem[]) {
+  return items.reduce<LogQueryItem | undefined>((latest, current) => {
+    if (!latest) {
+      return current;
+    }
+    return compareLogItems(current, latest) > 0 ? current : latest;
+  }, undefined);
+}
+
 function detectLogLevel(content: string): LogLevelTone {
   const upper = content.toUpperCase();
   if (/\bERROR\b/.test(upper)) {
@@ -93,6 +117,7 @@ export function UserLogsPage({ fullHeight = false }: UserLogsPageProps) {
   const [catalog, setCatalog] = useState<LogConsoleCatalog>();
   const [selectedNodeId, setSelectedNodeId] = useState<number>();
   const [selectedSourceId, setSelectedSourceId] = useState<string>();
+  const [selectedSourceKey, setSelectedSourceKey] = useState<string>();
   const [keyword, setKeyword] = useState('');
   const [queryResult, setQueryResult] = useState<LogQueryResponse>();
   const [loading, setLoading] = useState(true);
@@ -115,6 +140,7 @@ export function UserLogsPage({ fullHeight = false }: UserLogsPageProps) {
         const firstNode = data.nodes[0];
         setSelectedNodeId(firstNode?.id);
         setSelectedSourceId(firstNode?.sources[0]?.id);
+        setSelectedSourceKey(sourceSelectionKey(firstNode?.id, firstNode?.sources[0]?.id));
       })
       .finally(() => setLoading(false));
   }, []);
@@ -165,13 +191,14 @@ export function UserLogsPage({ fullHeight = false }: UserLogsPageProps) {
     }
     tailStreamCloseRef.current?.();
     const latestItem = queryResult.items[0];
+    const watermarkItem = findLatestLogItem(queryResult.items);
     tailStreamCloseRef.current = api.openLogTailStream({
       nodeId: selectedNodeId,
       sourceId: selectedSourceId,
       keyword: keyword.trim(),
-      afterCollectedAtEpochMs: latestItem?.collectedAtEpochMs,
-      afterFilePath: latestItem?.filePath,
-      afterLineNumber: latestItem?.lineNumber,
+      afterCollectedAtEpochMs: watermarkItem?.collectedAtEpochMs,
+      afterFilePath: watermarkItem?.filePath,
+      afterLineNumber: watermarkItem?.lineNumber,
     }, {
       onAppend: (payload) => appendTailItems(payload),
       onError: (text) => {
@@ -268,6 +295,7 @@ export function UserLogsPage({ fullHeight = false }: UserLogsPageProps) {
     tailStreamCloseRef.current = null;
     setSelectedNodeId(firstNode?.id);
     setSelectedSourceId(firstNode?.sources[0]?.id);
+    setSelectedSourceKey(sourceSelectionKey(firstNode?.id, firstNode?.sources[0]?.id));
     setKeyword('');
     setTailMode(false);
     setContextLines(10);
@@ -315,6 +343,7 @@ export function UserLogsPage({ fullHeight = false }: UserLogsPageProps) {
                     onClick={() => {
                       setSelectedNodeId(node.id);
                       setSelectedSourceId(node.sources[0]?.id);
+                      setSelectedSourceKey(sourceSelectionKey(node.id, node.sources[0]?.id));
                       tailStreamCloseRef.current?.();
                       tailStreamCloseRef.current = null;
                       setQueryResult(undefined);
@@ -333,10 +362,11 @@ export function UserLogsPage({ fullHeight = false }: UserLogsPageProps) {
                       <button
                         key={source.id}
                         type="button"
-                        className={`dx-log-source-button ${selectedSourceId === source.id ? 'is-active' : ''}`}
+                        className={`dx-log-source-button ${selectedSourceKey === sourceSelectionKey(node.id, source.id) ? 'is-active' : ''}`}
                         onClick={() => {
                           setSelectedNodeId(node.id);
                           setSelectedSourceId(source.id);
+                          setSelectedSourceKey(sourceSelectionKey(node.id, source.id));
                           tailStreamCloseRef.current?.();
                           tailStreamCloseRef.current = null;
                           setQueryResult(undefined);
