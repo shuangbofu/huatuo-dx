@@ -1,6 +1,7 @@
 package top.fusb.huatuo.dx.agent.service;
 
 import top.fusb.huatuo.dx.agent.config.HuatuoAgentProperties;
+import top.fusb.huatuo.dx.agent.dto.LogSourceConfigView;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -19,11 +20,17 @@ public class LogCollectorService {
 
     private final HuatuoAgentProperties properties;
     private final DuckDbLogIndexService duckDbLogIndexService;
+    private final LogEventAssembler logEventAssembler;
     private final AtomicLong lastCollectAt = new AtomicLong(0);
 
-    public LogCollectorService(HuatuoAgentProperties properties, DuckDbLogIndexService duckDbLogIndexService) {
+    public LogCollectorService(
+            HuatuoAgentProperties properties,
+            DuckDbLogIndexService duckDbLogIndexService,
+            LogEventAssembler logEventAssembler
+    ) {
         this.properties = properties;
         this.duckDbLogIndexService = duckDbLogIndexService;
+        this.logEventAssembler = logEventAssembler;
     }
 
     @Scheduled(initialDelay = 2000, fixedDelay = 1000)
@@ -38,11 +45,10 @@ public class LogCollectorService {
             return;
         }
         lastCollectAt.set(now);
-        for (String configuredRoot : properties.getLogSourceConfigs().stream()
+        for (LogSourceConfigView config : properties.getLogSourceConfigs().stream()
                 .filter(this::isCollectMode)
-                .map(config -> config.path())
-                .filter(path -> path != null && !path.isBlank())
                 .toList()) {
+            String configuredRoot = config.path();
             if (configuredRoot == null || configuredRoot.isBlank()) {
                 continue;
             }
@@ -52,21 +58,21 @@ public class LogCollectorService {
             }
             if (Files.isRegularFile(root)) {
                 if (isLogFile(root)) {
-                    collectFile(root, root);
+                    collectFile(root, root, config);
                 }
                 continue;
             }
             try (Stream<Path> stream = Files.walk(root)) {
                 stream.filter(Files::isRegularFile)
                         .filter(this::isLogFile)
-                        .forEach(path -> collectFile(root, path));
+                        .forEach(path -> collectFile(root, path, config));
             } catch (IOException ignored) {
                 // best effort collector
             }
         }
     }
 
-    private void collectFile(Path root, Path file) {
+    private void collectFile(Path root, Path file, LogSourceConfigView config) {
         try {
             String filePath = file.toAbsolutePath().normalize().toString();
             String directory = root.toString();
@@ -75,42 +81,23 @@ public class LogCollectorService {
             List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
             Instant collectedAt = Instant.now();
             DuckDbLogIndexService.FileState state = duckDbLogIndexService.findFileState(filePath);
-            boolean reset = state == null
-                    || fileSize < state.fileSize()
-                    || lastModified.toMillis() < state.lastModifiedEpochMs()
-                    || lines.size() < state.lineCount();
-            int startLine = reset ? 0 : state.lineCount();
-
-            if (reset) {
-                duckDbLogIndexService.replaceFileEntries(
-                        directory,
-                        filePath,
-                        lines,
-                        fileSize,
-                        lastModified.toMillis(),
-                        collectedAt
-                );
+            boolean changed = state == null
+                    || fileSize != state.fileSize()
+                    || lastModified.toMillis() != state.lastModifiedEpochMs()
+                    || lines.size() != state.lineCount();
+            if (!changed) {
                 return;
             }
 
-            if (startLine < lines.size()) {
-                duckDbLogIndexService.appendFileEntries(
-                        directory,
-                        filePath,
-                        startLine,
-                        lines.subList(startLine, lines.size()),
-                        fileSize,
-                        lastModified.toMillis(),
-                        collectedAt
-                );
-                return;
-            }
+            List<DuckDbLogIndexService.IndexedLogEntry> entries = logEventAssembler.assemble(lines, config).stream()
+                    .map(event -> new DuckDbLogIndexService.IndexedLogEntry(event.lineNumber(), event.content()))
+                    .toList();
 
-            duckDbLogIndexService.appendFileEntries(
+            duckDbLogIndexService.replaceFileEntries(
                     directory,
                     filePath,
-                    startLine,
-                    List.of(),
+                    entries,
+                    lines.size(),
                     fileSize,
                     lastModified.toMillis(),
                     collectedAt
@@ -125,7 +112,7 @@ public class LogCollectorService {
         return fileName.endsWith(".log") || fileName.contains(".log.");
     }
 
-    private boolean isCollectMode(top.fusb.huatuo.dx.agent.dto.LogSourceConfigView config) {
+    private boolean isCollectMode(LogSourceConfigView config) {
         String mode = config.mode();
         return mode != null && mode.equalsIgnoreCase("COLLECT");
     }

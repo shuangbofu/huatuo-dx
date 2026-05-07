@@ -38,15 +38,18 @@ public class LogService {
     private final HuatuoAgentProperties properties;
     private final LogCollectorService logCollectorService;
     private final DuckDbLogIndexService duckDbLogIndexService;
+    private final LogEventAssembler logEventAssembler;
 
     public LogService(
             HuatuoAgentProperties properties,
             LogCollectorService logCollectorService,
-            DuckDbLogIndexService duckDbLogIndexService
+            DuckDbLogIndexService duckDbLogIndexService,
+            LogEventAssembler logEventAssembler
     ) {
         this.properties = properties;
         this.logCollectorService = logCollectorService;
         this.duckDbLogIndexService = duckDbLogIndexService;
+        this.logEventAssembler = logEventAssembler;
     }
 
     public List<LogFileView> list(String currentPath) {
@@ -195,6 +198,14 @@ public class LogService {
                         && "COLLECT".equalsIgnoreCase(config.mode()));
     }
 
+    private LogSourceConfigView findLogSourceConfig(String directory) {
+        return properties.getLogSourceConfigs().stream()
+                .filter(config -> config.path() != null && !config.path().isBlank())
+                .filter(config -> Path.of(config.path()).toAbsolutePath().normalize().toString().equals(directory))
+                .findFirst()
+                .orElse(null);
+    }
+
     private LogFileView toView(Path path) {
         try {
             FileTime modified = Files.exists(path) ? Files.getLastModifiedTime(path) : FileTime.fromMillis(0);
@@ -283,7 +294,7 @@ public class LogService {
 
     private LogConsoleQueryResponse queryDirect(Path root, String keyword, int page, int pageSize, boolean tailing) {
         DuckDbLogIndexService.QueryExpression expression = tailing ? parseOptionalKeyword(keyword) : parseKeyword(keyword);
-        List<LogConsoleQueryItem> items = scanDirectItems(root, expression, tailing);
+        List<LogConsoleQueryItem> items = scanDirectItems(root, expression, tailing, findLogSourceConfig(root.toString()));
         int total = items.size();
         int fromIndex = Math.min(Math.max((page - 1) * pageSize, 0), total);
         int toIndex = Math.min(fromIndex + pageSize, total);
@@ -314,7 +325,7 @@ public class LogService {
             int limit
     ) {
         DuckDbLogIndexService.QueryExpression expression = parseOptionalKeyword(keyword);
-        List<LogConsoleQueryItem> items = scanDirectItems(root, expression, true).stream()
+        List<LogConsoleQueryItem> items = scanDirectItems(root, expression, true, findLogSourceConfig(root.toString())).stream()
                 .filter(item -> isAfter(item, afterCollectedAtEpochMs, afterFilePath, afterLineNumber))
                 .limit(limit)
                 .toList();
@@ -356,7 +367,12 @@ public class LogService {
         }
     }
 
-    private List<LogConsoleQueryItem> scanDirectItems(Path root, DuckDbLogIndexService.QueryExpression expression, boolean tailing) {
+    private List<LogConsoleQueryItem> scanDirectItems(
+            Path root,
+            DuckDbLogIndexService.QueryExpression expression,
+            boolean tailing,
+            LogSourceConfigView config
+    ) {
         List<LogConsoleQueryItem> items = new ArrayList<>();
         try (Stream<Path> stream = Files.isRegularFile(root) ? Stream.of(root) : Files.walk(root)) {
             List<Path> files = stream.filter(Files::isRegularFile)
@@ -366,12 +382,11 @@ public class LogService {
             for (Path file : files) {
                 long collectedAt = Files.getLastModifiedTime(file).toMillis();
                 List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
-                for (int i = 0; i < lines.size(); i += 1) {
-                    String line = lines.get(i);
-                    if (!matchesExpression(line, expression)) {
+                for (LogEventAssembler.LogEvent event : logEventAssembler.assemble(lines, config)) {
+                    if (!matchesExpression(event.content(), expression)) {
                         continue;
                     }
-                    items.add(new LogConsoleQueryItem(file.toString(), i + 1, line, collectedAt));
+                    items.add(new LogConsoleQueryItem(file.toString(), event.lineNumber(), event.content(), collectedAt));
                 }
             }
         } catch (IOException exception) {
