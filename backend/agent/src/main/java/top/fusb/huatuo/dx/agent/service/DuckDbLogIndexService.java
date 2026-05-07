@@ -67,24 +67,13 @@ public class DuckDbLogIndexService {
     public synchronized void replaceFileEntries(
             String directory,
             String filePath,
-            List<String> lines,
+            List<IndexedLogEntry> entries,
+            int totalLineCount,
             long fileSize,
             long lastModifiedEpochMs,
             Instant collectedAt
     ) {
-        writeFileSnapshot(directory, filePath, 0, lines, fileSize, lastModifiedEpochMs, collectedAt, true);
-    }
-
-    public synchronized void appendFileEntries(
-            String directory,
-            String filePath,
-            int startLine,
-            List<String> lines,
-            long fileSize,
-            long lastModifiedEpochMs,
-            Instant collectedAt
-    ) {
-        writeFileSnapshot(directory, filePath, startLine, lines, fileSize, lastModifiedEpochMs, collectedAt, false);
+        writeFileSnapshot(directory, filePath, entries, totalLineCount, fileSize, lastModifiedEpochMs, collectedAt, true);
     }
 
     public synchronized long countStatesByDirectory(String directory) {
@@ -322,8 +311,8 @@ public class DuckDbLogIndexService {
     private void writeFileSnapshot(
             String directory,
             String filePath,
-            int startLine,
-            List<String> lines,
+            List<IndexedLogEntry> entries,
+            int totalLineCount,
             long fileSize,
             long lastModifiedEpochMs,
             Instant collectedAt,
@@ -350,15 +339,14 @@ public class DuckDbLogIndexService {
                         statement.executeUpdate();
                     }
                 }
-                if (!lines.isEmpty()) {
+                if (!entries.isEmpty()) {
                     try (PreparedStatement statement = connection.prepareStatement(insertEntrySql)) {
-                        for (int index = 0; index < lines.size(); index++) {
-                            String line = lines.get(index);
+                        for (IndexedLogEntry entry : entries) {
                             statement.setString(1, directory);
                             statement.setString(2, filePath);
-                            statement.setInt(3, startLine + index + 1);
-                            statement.setString(4, line);
-                            statement.setString(5, normalize(line));
+                            statement.setInt(3, entry.lineNumber());
+                            statement.setString(4, entry.content());
+                            statement.setString(5, normalize(entry.content()));
                             statement.setLong(6, collectedAtEpochMs);
                             statement.addBatch();
                         }
@@ -374,7 +362,7 @@ public class DuckDbLogIndexService {
                     insertState.setString(2, directory);
                     insertState.setLong(3, fileSize);
                     insertState.setLong(4, lastModifiedEpochMs);
-                    insertState.setInt(5, startLine + lines.size());
+                    insertState.setInt(5, totalLineCount);
                     insertState.setLong(6, collectedAtEpochMs);
                     insertState.executeUpdate();
                 }
@@ -458,6 +446,9 @@ public class DuckDbLogIndexService {
             String latestFilePath,
             Integer latestLineNumber
     ) {
+    }
+
+    public record IndexedLogEntry(int lineNumber, String content) {
     }
 
     private record QueryPlan(String sql, List<Object> parameters) {
