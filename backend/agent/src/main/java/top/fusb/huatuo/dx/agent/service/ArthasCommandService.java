@@ -65,9 +65,10 @@ public class ArthasCommandService {
         Path arthasJar = arthasInstallerService.resolveArthasBootJar();
         ProcessBuilder builder = new ProcessBuilder("java", "-jar", arthasJar.toString(), String.valueOf(process.pid()));
         builder.redirectErrorStream(true);
+        MonitorSession session = null;
         try {
             Process arthasProcess = builder.start();
-            MonitorSession session = new MonitorSession(UUID.randomUUID().toString(), rule, process, command, arthasProcess, startedAt);
+            session = new MonitorSession(UUID.randomUUID().toString(), rule, process, command, arthasProcess, startedAt);
             sessions.put(session.sessionId, session);
             startBackgroundRead(session);
             waitForConsole(session, 20000);
@@ -84,8 +85,26 @@ public class ArthasCommandService {
                 startTimeoutWatcher(session);
             }
             return toResult(session);
+        } catch (BusinessException exception) {
+            String enrichedMessage = enrichStartupFailureMessage(exception.getMessage(), session);
+            log.error(
+                    "Failed to start Arthas session for pid {}, command={}, message={}",
+                    process.pid(),
+                    command,
+                    enrichedMessage,
+                    exception
+            );
+            throw new BusinessException(ErrorCode.ARTHAS_EXECUTE_FAILED, "启动 Arthas 监控失败: " + enrichedMessage);
         } catch (Exception exception) {
-            throw new BusinessException(ErrorCode.ARTHAS_EXECUTE_FAILED, "启动 Arthas 监控失败: " + exception.getMessage());
+            String enrichedMessage = enrichStartupFailureMessage(exception.getMessage(), session);
+            log.error(
+                    "Failed to start Arthas session for pid {}, command={}, message={}",
+                    process.pid(),
+                    command,
+                    enrichedMessage,
+                    exception
+            );
+            throw new BusinessException(ErrorCode.ARTHAS_EXECUTE_FAILED, "启动 Arthas 监控失败: " + enrichedMessage);
         }
     }
 
@@ -328,6 +347,40 @@ public class ArthasCommandService {
             }
         }
         throw new BusinessException(ErrorCode.ARTHAS_EXECUTE_FAILED, "Arthas 控制台未在规定时间内就绪");
+    }
+
+    private String enrichStartupFailureMessage(String baseMessage, MonitorSession session) {
+        String message = (baseMessage == null || baseMessage.isBlank()) ? "未知原因" : baseMessage;
+        String output = startupOutputSnippet(session);
+        if (output.isBlank()) {
+            return message;
+        }
+        return message + "；Arthas 原始输出: " + output;
+    }
+
+    private String startupOutputSnippet(MonitorSession session) {
+        if (session == null) {
+            return "";
+        }
+        String output;
+        synchronized (session.monitor) {
+            output = session.output.toString();
+        }
+        if (output == null) {
+            return "";
+        }
+        String normalized = output
+                .replace("\r", " ")
+                .replace("\n", " | ")
+                .replace("\t", " ")
+                .trim();
+        if (normalized.isBlank()) {
+            return "";
+        }
+        if (normalized.length() > 500) {
+            return normalized.substring(0, 500) + "...";
+        }
+        return normalized;
     }
 
     private boolean shouldAutoComplete(MonitorSession session) {
