@@ -12,11 +12,12 @@ import top.fusb.huatuo.dx.agent.exception.ErrorCode;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -63,12 +64,32 @@ public class ArthasCommandService {
         ProcessView process = resolveTargetProcess(rule, request);
         String command = buildCommand(rule, request);
         Path arthasJar = arthasInstallerService.resolveArthasBootJar();
-        ProcessBuilder builder = new ProcessBuilder("java", "-jar", arthasJar.toString(), String.valueOf(process.pid()));
+        int telnetPort = findFreePort();
+        int httpPort = findFreePort();
+        ProcessBuilder builder = new ProcessBuilder(
+                "java",
+                "-jar",
+                arthasJar.toString(),
+                "--telnet-port",
+                String.valueOf(telnetPort),
+                "--http-port",
+                String.valueOf(httpPort),
+                String.valueOf(process.pid())
+        );
         builder.redirectErrorStream(true);
         MonitorSession session = null;
         try {
             Process arthasProcess = builder.start();
-            session = new MonitorSession(UUID.randomUUID().toString(), rule, process, command, arthasProcess, startedAt);
+            session = new MonitorSession(
+                    UUID.randomUUID().toString(),
+                    rule,
+                    process,
+                    command,
+                    arthasProcess,
+                    startedAt,
+                    telnetPort,
+                    httpPort
+            );
             sessions.put(session.sessionId, session);
             startBackgroundRead(session);
             waitForConsole(session, 20000);
@@ -86,21 +107,25 @@ public class ArthasCommandService {
             }
             return toResult(session);
         } catch (BusinessException exception) {
-            String enrichedMessage = enrichStartupFailureMessage(exception.getMessage(), session);
+            String enrichedMessage = enrichStartupFailureMessage(exception.getMessage(), session, telnetPort, httpPort);
             log.error(
-                    "Failed to start Arthas session for pid {}, command={}, message={}",
+                    "Failed to start Arthas session for pid {}, command={}, telnetPort={}, httpPort={}, message={}",
                     process.pid(),
                     command,
+                    telnetPort,
+                    httpPort,
                     enrichedMessage,
                     exception
             );
             throw new BusinessException(ErrorCode.ARTHAS_EXECUTE_FAILED, "启动 Arthas 监控失败: " + enrichedMessage);
         } catch (Exception exception) {
-            String enrichedMessage = enrichStartupFailureMessage(exception.getMessage(), session);
+            String enrichedMessage = enrichStartupFailureMessage(exception.getMessage(), session, telnetPort, httpPort);
             log.error(
-                    "Failed to start Arthas session for pid {}, command={}, message={}",
+                    "Failed to start Arthas session for pid {}, command={}, telnetPort={}, httpPort={}, message={}",
                     process.pid(),
                     command,
+                    telnetPort,
+                    httpPort,
                     enrichedMessage,
                     exception
             );
@@ -334,6 +359,7 @@ public class ArthasCommandService {
                     return;
                 }
                 if (!session.process.isAlive()) {
+                    waitForOutputFlush(session, 300);
                     throw new BusinessException(
                             ErrorCode.ARTHAS_EXECUTE_FAILED,
                             "Arthas 控制台未就绪，进程已退出: " + session.process.exitValue()
@@ -349,8 +375,25 @@ public class ArthasCommandService {
         throw new BusinessException(ErrorCode.ARTHAS_EXECUTE_FAILED, "Arthas 控制台未在规定时间内就绪");
     }
 
-    private String enrichStartupFailureMessage(String baseMessage, MonitorSession session) {
+    private void waitForOutputFlush(MonitorSession session, long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        int previousLength = session.output.length();
+        while (System.currentTimeMillis() < deadline) {
+            session.monitor.wait(Math.min(100, deadline - System.currentTimeMillis()));
+            int currentLength = session.output.length();
+            if (currentLength > previousLength) {
+                previousLength = currentLength;
+                continue;
+            }
+            if (!session.process.isAlive()) {
+                break;
+            }
+        }
+    }
+
+    private String enrichStartupFailureMessage(String baseMessage, MonitorSession session, int telnetPort, int httpPort) {
         String message = (baseMessage == null || baseMessage.isBlank()) ? "未知原因" : baseMessage;
+        message = message + "（会话端口: telnet=" + telnetPort + ", http=" + httpPort + "）";
         String output = startupOutputSnippet(session);
         if (output.isBlank()) {
             return message;
@@ -424,6 +467,15 @@ public class ArthasCommandService {
         return "'" + value.replace("'", "\\'") + "'";
     }
 
+    private int findFreePort() {
+        try (ServerSocket socket = new ServerSocket()) {
+            socket.bind(new InetSocketAddress("127.0.0.1", 0));
+            return socket.getLocalPort();
+        } catch (IOException exception) {
+            throw new BusinessException(ErrorCode.ARTHAS_EXECUTE_FAILED, "分配 Arthas 监控端口失败: " + exception.getMessage());
+        }
+    }
+
     private static final class MonitorSession {
         private final String sessionId;
         private final DiagnosticRuleView rule;
@@ -431,6 +483,8 @@ public class ArthasCommandService {
         private final String command;
         private final Process process;
         private final Instant startedAt;
+        private final int telnetPort;
+        private final int httpPort;
         private final StringBuilder output = new StringBuilder();
         private final Object monitor = new Object();
         private boolean commandDispatched;
@@ -446,7 +500,9 @@ public class ArthasCommandService {
                 ProcessView processView,
                 String command,
                 Process process,
-                Instant startedAt
+                Instant startedAt,
+                int telnetPort,
+                int httpPort
         ) {
             this.sessionId = sessionId;
             this.rule = rule;
@@ -454,6 +510,8 @@ public class ArthasCommandService {
             this.command = command;
             this.process = process;
             this.startedAt = startedAt;
+            this.telnetPort = telnetPort;
+            this.httpPort = httpPort;
             this.updatedAt = startedAt;
             this.durationMs = 0L;
         }
