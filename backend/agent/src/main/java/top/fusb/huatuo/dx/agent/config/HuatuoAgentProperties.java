@@ -23,6 +23,7 @@ public class HuatuoAgentProperties {
     private String arthasVersion = "3.7.3";
     private String arthasDownloadBaseUrl = "https://arthas.aliyun.com/arthas-boot.jar";
     private String arthasInstallDir = "./arthas";
+    private String arthasJavaHome;
     private int heartbeatIntervalSeconds = 15;
     private boolean localCompanion;
 
@@ -152,6 +153,14 @@ public class HuatuoAgentProperties {
 
     public void setArthasInstallDir(String arthasInstallDir) {
         this.arthasInstallDir = arthasInstallDir;
+    }
+
+    public String getArthasJavaHome() {
+        return arthasJavaHome;
+    }
+
+    public void setArthasJavaHome(String arthasJavaHome) {
+        this.arthasJavaHome = arthasJavaHome;
     }
 
     public int getHeartbeatIntervalSeconds() {

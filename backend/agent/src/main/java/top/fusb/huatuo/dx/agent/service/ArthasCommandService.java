@@ -9,12 +9,15 @@ import top.fusb.huatuo.dx.agent.dto.DiagnosticType;
 import top.fusb.huatuo.dx.agent.dto.ProcessView;
 import top.fusb.huatuo.dx.agent.exception.BusinessException;
 import top.fusb.huatuo.dx.agent.exception.ErrorCode;
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -64,10 +67,11 @@ public class ArthasCommandService {
         ProcessView process = resolveTargetProcess(rule, request);
         String command = buildCommand(rule, request);
         Path arthasJar = arthasInstallerService.resolveArthasBootJar();
+        String javaCommand = resolveJavaCommand(process);
         int telnetPort = findFreePort();
         int httpPort = findFreePort();
         ProcessBuilder builder = new ProcessBuilder(
-                "java",
+                javaCommand,
                 "-jar",
                 arthasJar.toString(),
                 "--telnet-port",
@@ -109,9 +113,10 @@ public class ArthasCommandService {
         } catch (BusinessException exception) {
             String enrichedMessage = enrichStartupFailureMessage(exception.getMessage(), session, telnetPort, httpPort);
             log.error(
-                    "Failed to start Arthas session for pid {}, command={}, telnetPort={}, httpPort={}, message={}",
+                    "Failed to start Arthas session for pid {}, command={}, javaCommand={}, telnetPort={}, httpPort={}, message={}",
                     process.pid(),
                     command,
+                    javaCommand,
                     telnetPort,
                     httpPort,
                     enrichedMessage,
@@ -121,9 +126,10 @@ public class ArthasCommandService {
         } catch (Exception exception) {
             String enrichedMessage = enrichStartupFailureMessage(exception.getMessage(), session, telnetPort, httpPort);
             log.error(
-                    "Failed to start Arthas session for pid {}, command={}, telnetPort={}, httpPort={}, message={}",
+                    "Failed to start Arthas session for pid {}, command={}, javaCommand={}, telnetPort={}, httpPort={}, message={}",
                     process.pid(),
                     command,
+                    javaCommand,
                     telnetPort,
                     httpPort,
                     enrichedMessage,
@@ -465,6 +471,60 @@ public class ArthasCommandService {
 
     private String quote(String value) {
         return "'" + value.replace("'", "\\'") + "'";
+    }
+
+    private String resolveJavaCommand(ProcessView process) {
+        String configuredJavaHome = properties.getArthasJavaHome();
+        if (configuredJavaHome != null && !configuredJavaHome.isBlank()) {
+            Path configuredJava = Path.of(configuredJavaHome).resolve("bin").resolve("java");
+            if (Files.isRegularFile(configuredJava) && Files.isExecutable(configuredJava)) {
+                log.info("Using configured Arthas JAVA_HOME for pid {}: {}", process.pid(), configuredJava);
+                return configuredJava.toString();
+            }
+            log.warn("Configured Arthas JAVA_HOME is invalid for pid {}: {}", process.pid(), configuredJavaHome);
+        }
+        return resolveTargetJavaHome(process)
+                .map(javaHome -> javaHome.resolve("bin").resolve("java"))
+                .filter(path -> Files.isRegularFile(path) && Files.isExecutable(path))
+                .map(path -> {
+                    log.info("Resolved target JVM java command for pid {}: {}", process.pid(), path);
+                    return path.toString();
+                })
+                .orElseGet(() -> {
+                    log.info("Falling back to default java command for pid {}", process.pid());
+                    return "java";
+                });
+    }
+
+    private Optional<Path> resolveTargetJavaHome(ProcessView process) {
+        ProcessBuilder builder = new ProcessBuilder("jcmd", String.valueOf(process.pid()), "VM.system_properties");
+        builder.redirectErrorStream(true);
+        try {
+            Process jcmdProcess = builder.start();
+            String output;
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(jcmdProcess.getInputStream(), StandardCharsets.UTF_8))) {
+                output = reader.lines().reduce("", (left, right) -> left + "\n" + right);
+            }
+            int exitCode = jcmdProcess.waitFor();
+            if (exitCode != 0) {
+                log.warn("Failed to resolve target JVM java.home for pid {}, jcmd exitCode={}, output={}", process.pid(), exitCode, output.trim());
+                return Optional.empty();
+            }
+            for (String line : output.split("\\R")) {
+                String trimmed = line.trim();
+                if (trimmed.startsWith("java.home=")) {
+                    String javaHome = trimmed.substring("java.home=".length()).trim();
+                    if (!javaHome.isBlank()) {
+                        return Optional.of(Path.of(javaHome));
+                    }
+                }
+            }
+            log.warn("java.home was not found in jcmd output for pid {}", process.pid());
+            return Optional.empty();
+        } catch (Exception exception) {
+            log.warn("Failed to inspect target JVM java.home for pid {}: {}", process.pid(), exception.getMessage());
+            return Optional.empty();
+        }
     }
 
     private int findFreePort() {
