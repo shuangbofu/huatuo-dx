@@ -476,7 +476,8 @@ public class ArthasCommandService {
     private String resolveJavaCommand(ProcessView process) {
         String configuredJavaHome = properties.getArthasJavaHome();
         if (configuredJavaHome != null && !configuredJavaHome.isBlank()) {
-            Path configuredJava = Path.of(configuredJavaHome).resolve("bin").resolve("java");
+            Path configuredHome = normalizeJavaHome(Path.of(configuredJavaHome));
+            Path configuredJava = configuredHome.resolve("bin").resolve("java");
             if (Files.isRegularFile(configuredJava) && Files.isExecutable(configuredJava)) {
                 log.info("Using configured Arthas JAVA_HOME for pid {}: {}", process.pid(), configuredJava);
                 return configuredJava.toString();
@@ -515,7 +516,11 @@ public class ArthasCommandService {
                 if (trimmed.startsWith("java.home=")) {
                     String javaHome = trimmed.substring("java.home=".length()).trim();
                     if (!javaHome.isBlank()) {
-                        return Optional.of(Path.of(javaHome));
+                        Path normalizedJavaHome = normalizeJavaHome(Path.of(javaHome));
+                        if (!normalizedJavaHome.equals(Path.of(javaHome))) {
+                            log.info("Normalized target JVM java.home for pid {} from {} to {}", process.pid(), javaHome, normalizedJavaHome);
+                        }
+                        return Optional.of(normalizedJavaHome);
                     }
                 }
             }
@@ -525,6 +530,23 @@ public class ArthasCommandService {
             log.warn("Failed to inspect target JVM java.home for pid {}: {}", process.pid(), exception.getMessage());
             return Optional.empty();
         }
+    }
+
+    private Path normalizeJavaHome(Path javaHome) {
+        Path normalized = javaHome.normalize();
+        if (!normalized.getFileName().toString().equalsIgnoreCase("jre")) {
+            return normalized;
+        }
+        Path parent = normalized.getParent();
+        if (parent == null) {
+            return normalized;
+        }
+        Path parentJava = parent.resolve("bin").resolve("java");
+        Path parentToolsJar = parent.resolve("lib").resolve("tools.jar");
+        if (Files.isRegularFile(parentJava) && Files.isExecutable(parentJava) && Files.isRegularFile(parentToolsJar)) {
+            return parent;
+        }
+        return normalized;
     }
 
     private int findFreePort() {
