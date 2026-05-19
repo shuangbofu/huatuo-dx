@@ -108,13 +108,12 @@ public class ArthasCommandService {
                 session.promptCountAtDispatch = countPromptOccurrences(session.output);
             }
             log.info(
-                    "Started Arthas session {} for pid {} with command: {}, javaCommand={}, javaHome={}, source={}",
+                    "Started Arthas session {} for pid {} with command: {}, javaCommand={}, javaHome={}",
                     session.sessionId,
                     process.pid(),
                     command,
                     javaLaunchInfo.command(),
-                    javaLaunchInfo.javaHome(),
-                    javaLaunchInfo.source()
+                    javaLaunchInfo.javaHome()
             );
             startExitWatcher(session);
             if (applyTimeout) {
@@ -124,12 +123,11 @@ public class ArthasCommandService {
         } catch (BusinessException exception) {
             String enrichedMessage = enrichStartupFailureMessage(exception.getMessage(), session, telnetPort, httpPort);
             log.error(
-                    "Failed to start Arthas session for pid {}, command={}, javaCommand={}, javaHome={}, source={}, telnetPort={}, httpPort={}, message={}",
+                    "Failed to start Arthas session for pid {}, command={}, javaCommand={}, javaHome={}, telnetPort={}, httpPort={}, message={}",
                     process.pid(),
                     command,
                     javaLaunchInfo.command(),
                     javaLaunchInfo.javaHome(),
-                    javaLaunchInfo.source(),
                     telnetPort,
                     httpPort,
                     enrichedMessage,
@@ -139,12 +137,11 @@ public class ArthasCommandService {
         } catch (Exception exception) {
             String enrichedMessage = enrichStartupFailureMessage(exception.getMessage(), session, telnetPort, httpPort);
             log.error(
-                    "Failed to start Arthas session for pid {}, command={}, javaCommand={}, javaHome={}, source={}, telnetPort={}, httpPort={}, message={}",
+                    "Failed to start Arthas session for pid {}, command={}, javaCommand={}, javaHome={}, telnetPort={}, httpPort={}, message={}",
                     process.pid(),
                     command,
                     javaLaunchInfo.command(),
                     javaLaunchInfo.javaHome(),
-                    javaLaunchInfo.source(),
                     telnetPort,
                     httpPort,
                     enrichedMessage,
@@ -489,33 +486,22 @@ public class ArthasCommandService {
     }
 
     private JavaLaunchInfo resolveJavaLaunchInfo(ProcessView process) {
-        String configuredJavaHome = properties.getArthasJavaHome();
-        if (configuredJavaHome != null && !configuredJavaHome.isBlank()) {
-            Path configuredHome = normalizeJavaHome(Path.of(configuredJavaHome));
-            Optional<JavaLaunchInfo> configured = toLaunchInfo(configuredHome, "configured-java-home");
-            if (configured.isPresent()) {
-                JavaLaunchInfo launchInfo = configured.get();
-                log.info("Using configured Arthas JAVA_HOME for pid {}: {}", process.pid(), launchInfo.command());
-                return launchInfo;
-            }
-            log.warn("Configured Arthas JAVA_HOME is invalid for pid {}: {}", process.pid(), configuredJavaHome);
-        }
         Optional<JavaLaunchInfo> fromProcessCommand = resolveTargetJavaHomeFromCommand(process)
-                .flatMap(javaHome -> toLaunchInfo(javaHome, "target-process-command"));
+                .flatMap(this::toLaunchInfo);
         if (fromProcessCommand.isPresent()) {
             JavaLaunchInfo launchInfo = fromProcessCommand.get();
             log.info("Resolved target JVM java command from process command for pid {}: {}", process.pid(), launchInfo.command());
             return launchInfo;
         }
         Optional<JavaLaunchInfo> fromJavaHome = resolveTargetJavaHome(process)
-                .flatMap(javaHome -> toLaunchInfo(javaHome, "target-jcmd-java-home"));
+                .flatMap(this::toLaunchInfo);
         if (fromJavaHome.isPresent()) {
             JavaLaunchInfo launchInfo = fromJavaHome.get();
             log.info("Resolved target JVM java command from jcmd java.home for pid {}: {}", process.pid(), launchInfo.command());
             return launchInfo;
         }
         log.info("Falling back to default java command for pid {}", process.pid());
-        return new JavaLaunchInfo("java", null, "default-java-command");
+        return new JavaLaunchInfo("java", null);
     }
 
     private Optional<Path> resolveTargetJavaHome(ProcessView process) {
@@ -597,13 +583,13 @@ public class ArthasCommandService {
         return normalized;
     }
 
-    private Optional<JavaLaunchInfo> toLaunchInfo(Path javaHome, String source) {
+    private Optional<JavaLaunchInfo> toLaunchInfo(Path javaHome) {
         Path normalizedHome = normalizeJavaHome(javaHome);
         Path javaCommand = normalizedHome.resolve("bin").resolve("java");
         if (!Files.isRegularFile(javaCommand) || !Files.isExecutable(javaCommand)) {
             return Optional.empty();
         }
-        return Optional.of(new JavaLaunchInfo(javaCommand.toString(), normalizedHome.toString(), source));
+        return Optional.of(new JavaLaunchInfo(javaCommand.toString(), normalizedHome.toString()));
     }
 
     private int findFreePort() {
@@ -615,7 +601,7 @@ public class ArthasCommandService {
         }
     }
 
-    private record JavaLaunchInfo(String command, String javaHome, String source) {
+    private record JavaLaunchInfo(String command, String javaHome) {
     }
 
     private static final class MonitorSession {
