@@ -150,14 +150,55 @@ public class ProcessDiscoveryService {
     private ProcessView merge(ProcessView primary, ProcessView fallback) {
         return new ProcessView(
                 primary.pid(),
-                choose(primary.displayName(), fallback.displayName()),
-                choose(primary.command(), fallback.command()),
-                choose(primary.commandLine(), fallback.commandLine()),
+                chooseDisplayName(primary.displayName(), fallback.displayName()),
+                chooseCommand(primary.command(), fallback.command()),
+                chooseCommandLine(primary.commandLine(), fallback.commandLine()),
                 choose(primary.user(), fallback.user())
         );
     }
 
+    private String chooseDisplayName(String primary, String fallback) {
+        if (primary != null && !primary.isBlank() && !primary.equalsIgnoreCase("java")) {
+            return primary;
+        }
+        return choose(primary, fallback);
+    }
+
+    private String chooseCommand(String primary, String fallback) {
+        if (isGenericJava(primary) && isConcreteCommand(fallback)) {
+            return fallback;
+        }
+        return choose(primary, fallback);
+    }
+
+    private String chooseCommandLine(String primary, String fallback) {
+        if (isGenericCommandLine(primary) && fallback != null && !fallback.isBlank()) {
+            return fallback;
+        }
+        return choose(primary, fallback);
+    }
+
     private String choose(String preferred, String alternate) {
         return preferred != null && !preferred.isBlank() ? preferred : alternate;
+    }
+
+    private boolean isGenericJava(String value) {
+        if (value == null) {
+            return false;
+        }
+        String normalized = value.trim();
+        return normalized.equals("java") || normalized.equals("/usr/bin/java");
+    }
+
+    private boolean isConcreteCommand(String value) {
+        return value != null && !value.isBlank() && !isGenericJava(value);
+    }
+
+    private boolean isGenericCommandLine(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String normalized = value.trim();
+        return normalized.equals("java") || normalized.startsWith("java ");
     }
 }
