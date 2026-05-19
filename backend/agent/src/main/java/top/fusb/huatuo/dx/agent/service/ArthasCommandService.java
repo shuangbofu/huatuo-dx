@@ -166,7 +166,7 @@ public class ArthasCommandService {
             session.durationMs = Duration.between(session.startedAt, session.updatedAt).toMillis();
             try {
                 OutputStream stdin = session.process.getOutputStream();
-                stdin.write("quit\n".getBytes(StandardCharsets.UTF_8));
+                stdin.write("stop\n".getBytes(StandardCharsets.UTF_8));
                 stdin.flush();
             } catch (IOException ignored) {
                 // ignore and destroy below
@@ -210,7 +210,7 @@ public class ArthasCommandService {
                         if (shouldAutoComplete(session)) {
                             session.status = DiagnosticSessionStatus.COMPLETED;
                             session.monitor.notifyAll();
-                            quitProcessQuietly(session);
+                            stopProcessQuietly(session);
                             continue;
                         }
                         session.monitor.notifyAll();
@@ -467,13 +467,13 @@ public class ArthasCommandService {
         return count;
     }
 
-    private void quitProcessQuietly(MonitorSession session) {
+    private void stopProcessQuietly(MonitorSession session) {
         try {
             OutputStream stdin = session.process.getOutputStream();
-            stdin.write("quit\n".getBytes(StandardCharsets.UTF_8));
+            stdin.write("stop\n".getBytes(StandardCharsets.UTF_8));
             stdin.flush();
         } catch (IOException exception) {
-            log.debug("Failed to quit Arthas session {} gracefully: {}", session.sessionId, exception.getMessage());
+            log.debug("Failed to stop Arthas session {} gracefully: {}", session.sessionId, exception.getMessage());
         }
     }
 
